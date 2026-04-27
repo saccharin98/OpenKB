@@ -1,6 +1,7 @@
 """Tests for openkb.lint (Task 13)."""
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -139,6 +140,46 @@ class TestFindMissingEntries:
         result = find_missing_entries(raw, wiki)
 
         assert "longdoc.pdf" not in result
+
+    def test_registry_name_counts_for_raw_ingest_with_hash_doc_name(self, tmp_path):
+        """Watched files already in raw/ keep their filename but compile to doc_name."""
+        wiki = _make_wiki(tmp_path)
+        raw = tmp_path / "raw"
+        raw.mkdir()
+        openkb_dir = tmp_path / ".openkb"
+        openkb_dir.mkdir()
+        (raw / "report.md").write_text("# Report", encoding="utf-8")
+        (wiki / "sources" / "report-deadbeef00.md").write_text("# Report")
+        (openkb_dir / "hashes.json").write_text(json.dumps({
+            "deadbeef": {
+                "name": "report.md",
+                "doc_name": "report-deadbeef00",
+                "type": "md",
+            }
+        }))
+
+        result = find_missing_entries(raw, wiki)
+
+        assert result == []
+
+    def test_registry_without_wiki_file_still_counts_as_missing(self, tmp_path):
+        wiki = _make_wiki(tmp_path)
+        raw = tmp_path / "raw"
+        raw.mkdir()
+        openkb_dir = tmp_path / ".openkb"
+        openkb_dir.mkdir()
+        (raw / "report.md").write_text("# Report", encoding="utf-8")
+        (openkb_dir / "hashes.json").write_text(json.dumps({
+            "deadbeef": {
+                "name": "report.md",
+                "doc_name": "report-deadbeef00",
+                "type": "md",
+            }
+        }))
+
+        result = find_missing_entries(raw, wiki)
+
+        assert result == ["report.md"]
 
     def test_empty_raw_means_no_missing(self, tmp_path):
         wiki = _make_wiki(tmp_path)

@@ -8,6 +8,7 @@ Checks for:
 """
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 
@@ -137,7 +138,8 @@ def find_missing_entries(raw: Path, wiki: Path) -> list[str]:
     """Find files in raw/ that have no corresponding wiki entries.
 
     A file is considered "present" if it has either a sources/ or summaries/
-    page with the same stem.
+    page with the same stem. For hash-suffixed doc names, the hash registry can
+    map the original raw filename to the internal doc_name used by wiki files.
 
     Args:
         raw: Path to the raw documents directory.
@@ -149,14 +151,38 @@ def find_missing_entries(raw: Path, wiki: Path) -> list[str]:
     sources_dir = wiki / "sources"
     summaries_dir = wiki / "summaries"
 
-    sources_stems = {p.stem for p in sources_dir.glob("*.md")} if sources_dir.exists() else set()
+    sources_stems = (
+        {p.stem for p in sources_dir.iterdir() if p.suffix in {".md", ".json"}}
+        if sources_dir.exists()
+        else set()
+    )
     summary_stems = {p.stem for p in summaries_dir.glob("*.md")} if summaries_dir.exists() else set()
     known_stems = sources_stems | summary_stems
+    registry_doc_names_by_raw_name: dict[str, set[str]] = {}
+
+    hashes_path = raw.parent / ".openkb" / "hashes.json"
+    if hashes_path.exists():
+        try:
+            registry = json.loads(hashes_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            registry = {}
+        if isinstance(registry, dict):
+            for metadata in registry.values():
+                if not isinstance(metadata, dict):
+                    continue
+                name = metadata.get("name")
+                doc_name = metadata.get("doc_name")
+                if isinstance(name, str) and isinstance(doc_name, str):
+                    registry_doc_names_by_raw_name.setdefault(name, set()).add(doc_name)
 
     missing: list[str] = []
     if raw.exists():
         for f in raw.iterdir():
-            if f.is_file() and f.stem not in known_stems:
+            if not f.is_file():
+                continue
+            registry_doc_names = registry_doc_names_by_raw_name.get(f.name, set())
+            has_registry_entry = bool(registry_doc_names & known_stems)
+            if not has_registry_entry and f.stem not in known_stems:
                 missing.append(f.name)
 
     return sorted(missing)
