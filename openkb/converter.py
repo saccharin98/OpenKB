@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 import logging
+import re
 import shutil
-from dataclasses import dataclass, field
+import unicodedata
+from dataclasses import dataclass
 from pathlib import Path
 
 import pymupdf
@@ -25,6 +27,20 @@ class ConvertResult:
     is_long_doc: bool = False
     skipped: bool = False
     file_hash: str | None = None  # For deferred hash registration
+    doc_name: str | None = None
+
+
+_SAFE_STEM_RE = re.compile(r"[^\w\-]+")
+_DOC_HASH_LEN = 10
+
+
+def _make_doc_name(src: Path, file_hash: str) -> str:
+    """Return the stable internal document name for a source file."""
+    stem = unicodedata.normalize("NFKC", src.stem)
+    safe_stem = _SAFE_STEM_RE.sub("-", stem).strip("-")
+    if not safe_stem:
+        safe_stem = "document"
+    return f"{safe_stem}-{file_hash[:_DOC_HASH_LEN]}"
 
 
 def get_pdf_page_count(path: Path) -> int:
@@ -56,17 +72,25 @@ def convert_document(src: Path, kb_dir: Path) -> ConvertResult:
     # 1. Hash check
     # ------------------------------------------------------------------
     file_hash = HashRegistry.hash_file(src)
+    doc_name = _make_doc_name(src, file_hash)
     if registry.is_known(file_hash):
         logger.info("Skipping already-known file: %s", src.name)
-        return ConvertResult(skipped=True)
+        metadata = registry.get(file_hash) or {}
+        return ConvertResult(
+            skipped=True,
+            file_hash=file_hash,
+            doc_name=metadata.get("doc_name", doc_name),
+        )
 
     # ------------------------------------------------------------------
     # 2. Copy to raw/
     # ------------------------------------------------------------------
     raw_dir = kb_dir / "raw"
     raw_dir.mkdir(parents=True, exist_ok=True)
-    raw_dest = raw_dir / src.name
-    if raw_dest.resolve() != src.resolve():
+    if src.resolve().is_relative_to(raw_dir.resolve()):
+        raw_dest = src
+    else:
+        raw_dest = raw_dir / f"{doc_name}{src.suffix.lower()}"
         shutil.copy2(src, raw_dest)
 
     # ------------------------------------------------------------------
@@ -81,17 +105,20 @@ def convert_document(src: Path, kb_dir: Path) -> ConvertResult:
                 threshold,
                 src.name,
             )
-            return ConvertResult(raw_path=raw_dest, is_long_doc=True, file_hash=file_hash)
+            return ConvertResult(
+                raw_path=raw_dest,
+                doc_name=doc_name,
+                is_long_doc=True,
+                file_hash=file_hash,
+            )
 
     # ------------------------------------------------------------------
     # 4/5. Convert to Markdown
     # ------------------------------------------------------------------
     sources_dir = kb_dir / "wiki" / "sources"
     sources_dir.mkdir(parents=True, exist_ok=True)
-    images_dir = kb_dir / "wiki" / "sources" / "images" / src.stem
+    images_dir = kb_dir / "wiki" / "sources" / "images" / doc_name
     images_dir.mkdir(parents=True, exist_ok=True)
-
-    doc_name = src.stem
 
     if src.suffix.lower() == ".md":
         markdown = src.read_text(encoding="utf-8")
@@ -109,4 +136,9 @@ def convert_document(src: Path, kb_dir: Path) -> ConvertResult:
     dest_md = sources_dir / f"{doc_name}.md"
     dest_md.write_text(markdown, encoding="utf-8")
 
-    return ConvertResult(raw_path=raw_dest, source_path=dest_md, file_hash=file_hash)
+    return ConvertResult(
+        raw_path=raw_dest,
+        source_path=dest_md,
+        doc_name=doc_name,
+        file_hash=file_hash,
+    )

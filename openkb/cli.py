@@ -160,14 +160,14 @@ def add_single_file(file_path: Path, kb_dir: Path) -> None:
         click.echo(f"  [SKIP] Already in knowledge base: {file_path.name}")
         return
 
-    doc_name = file_path.stem
+    doc_name = result.doc_name or file_path.stem
 
     # 3/4. Index and compile
     if result.is_long_doc:
         click.echo(f"  Long document detected — indexing with PageIndex...")
         try:
             from openkb.indexer import index_long_document
-            index_result = index_long_document(result.raw_path, kb_dir)
+            index_result = index_long_document(result.raw_path, kb_dir, doc_name=doc_name)
         except Exception as exc:
             click.echo(f"  [ERROR] Indexing failed: {exc}")
             logger.debug("Indexing traceback:", exc_info=True)
@@ -208,7 +208,11 @@ def add_single_file(file_path: Path, kb_dir: Path) -> None:
     # Register hash only after successful compilation
     if result.file_hash:
         doc_type = "long_pdf" if result.is_long_doc else file_path.suffix.lstrip(".")
-        registry.add(result.file_hash, {"name": file_path.name, "type": doc_type})
+        registry.add(result.file_hash, {
+            "name": file_path.name,
+            "doc_name": doc_name,
+            "type": doc_type,
+        })
 
     append_log(kb_dir / "wiki", "ingest", file_path.name)
     click.echo(f"  [OK] {file_path.name} added to knowledge base.")

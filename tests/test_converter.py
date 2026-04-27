@@ -42,7 +42,9 @@ class TestConvertDocumentMarkdown:
 
         assert result.skipped is False
         assert result.is_long_doc is False
+        assert result.doc_name == f"notes-{result.file_hash[:10]}"
         assert result.source_path is not None
+        assert result.source_path.name == f"{result.doc_name}.md"
         assert result.source_path.exists()
         assert result.source_path.read_text(encoding="utf-8").startswith("# Notes")
 
@@ -72,7 +74,30 @@ class TestConvertDocumentMarkdown:
         result = convert_document(src, kb_dir)
 
         assert result.raw_path is not None
+        assert result.raw_path.name == f"{result.doc_name}.md"
         assert result.raw_path.exists()
+
+    def test_same_filename_different_content_gets_distinct_outputs(self, kb_dir):
+        """Files with the same basename must not overwrite wiki artifacts."""
+        first_dir = kb_dir / "inputs" / "first"
+        second_dir = kb_dir / "inputs" / "second"
+        first_dir.mkdir(parents=True)
+        second_dir.mkdir(parents=True)
+        first = first_dir / "report.md"
+        second = second_dir / "report.md"
+        first.write_text("# First\n\nAlpha content.", encoding="utf-8")
+        second.write_text("# Second\n\nBeta content.", encoding="utf-8")
+
+        first_result = convert_document(first, kb_dir)
+        second_result = convert_document(second, kb_dir)
+
+        assert first_result.doc_name != second_result.doc_name
+        assert first_result.source_path != second_result.source_path
+        assert first_result.raw_path != second_result.raw_path
+        assert first_result.source_path.read_text(encoding="utf-8").startswith("# First")
+        assert second_result.source_path.read_text(encoding="utf-8").startswith("# Second")
+        assert first_result.raw_path.read_text(encoding="utf-8").startswith("# First")
+        assert second_result.raw_path.read_text(encoding="utf-8").startswith("# Second")
 
 
 # ---------------------------------------------------------------------------
