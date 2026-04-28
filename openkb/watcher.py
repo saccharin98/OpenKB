@@ -53,11 +53,11 @@ class DebouncedHandler(FileSystemEventHandler):
         if paths:
             self._callback(paths)
 
-    def _handle_event(self, event) -> None:
-        """Add the event's source path to pending if it's a supported file."""
+    def _handle_event(self, event, path_attr: str = "src_path") -> None:
+        """Add the event path to pending if it's a supported file."""
         if event.is_directory:
             return
-        path = Path(event.src_path)
+        path = Path(getattr(event, path_attr))
         # Ignore hidden/dotfiles
         if path.name.startswith("."):
             return
@@ -72,6 +72,10 @@ class DebouncedHandler(FileSystemEventHandler):
     def on_modified(self, event) -> None:
         """Handle file modification events."""
         self._handle_event(event)
+
+    def on_moved(self, event) -> None:
+        """Handle atomic-save and rename events."""
+        self._handle_event(event, "dest_path")
 
 
 def watch_directory(

@@ -143,6 +143,11 @@ class TestAddCommand:
             is_long_doc=False,
             file_hash="deadbeef00" * 8,
         )
+        stale_hash = "oldhash"
+        hashes_path = kb_dir / ".openkb" / "hashes.json"
+        hashes_path.write_text(json.dumps({
+            stale_hash: {"name": "test.md", "doc_name": mock_result.doc_name, "type": "md"}
+        }))
 
         runner = CliRunner()
         with patch("openkb.cli._find_kb_dir", return_value=kb_dir), \
@@ -153,4 +158,7 @@ class TestAddCommand:
             assert "OK" in result.output
 
         hashes = json.loads((kb_dir / ".openkb" / "hashes.json").read_text())
+        assert stale_hash not in hashes
         assert hashes[mock_result.file_hash]["doc_name"] == "test-deadbeef00"
+        assert hashes[mock_result.file_hash]["raw_path"] == "raw/test.md"
+        assert hashes[mock_result.file_hash]["source_path"] == "wiki/sources/test.md"

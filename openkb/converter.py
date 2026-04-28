@@ -1,6 +1,7 @@
 """Document conversion pipeline for OpenKB."""
 from __future__ import annotations
 
+import hashlib
 import logging
 import re
 import shutil
@@ -31,16 +32,31 @@ class ConvertResult:
 
 
 _SAFE_STEM_RE = re.compile(r"[^\w\-]+")
-_DOC_HASH_LEN = 10
+_DOC_HASH_LEN = 12
 
 
-def _make_doc_name(src: Path, file_hash: str) -> str:
+def _registry_path(path: Path, kb_dir: Path) -> str:
+    """Return the portable path key stored in the hash registry."""
+    resolved_path = path.resolve()
+    resolved_kb = kb_dir.resolve()
+    if resolved_path.is_relative_to(resolved_kb):
+        return resolved_path.relative_to(resolved_kb).as_posix()
+    return resolved_path.as_posix()
+
+
+def _path_hash(src: Path, kb_dir: Path) -> str:
+    """Return a stable hash for a source path, independent of file content."""
+    identity = _registry_path(src, kb_dir)
+    return hashlib.sha256(identity.encode("utf-8")).hexdigest()
+
+
+def _make_doc_name(src: Path, kb_dir: Path) -> str:
     """Return the stable internal document name for a source file."""
     stem = unicodedata.normalize("NFKC", src.stem)
     safe_stem = _SAFE_STEM_RE.sub("-", stem).strip("-")
     if not safe_stem:
         safe_stem = "document"
-    return f"{safe_stem}-{file_hash[:_DOC_HASH_LEN]}"
+    return f"{safe_stem}-{_path_hash(src, kb_dir)[:_DOC_HASH_LEN]}"
 
 
 def get_pdf_page_count(path: Path) -> int:
@@ -53,7 +69,7 @@ def convert_document(src: Path, kb_dir: Path) -> ConvertResult:
     """Convert a document and integrate it into the knowledge base.
 
     Steps:
-    1. Hash-check — skip if already known.
+    1. Hash-check — skip if this exact content is already known.
     2. Copy source to ``raw/``.
     3. If PDF and page count >= threshold → return :attr:`ConvertResult.is_long_doc`.
     4. If ``.md`` — read, process relative images, save to ``wiki/sources/``.
@@ -72,14 +88,16 @@ def convert_document(src: Path, kb_dir: Path) -> ConvertResult:
     # 1. Hash check
     # ------------------------------------------------------------------
     file_hash = HashRegistry.hash_file(src)
-    doc_name = _make_doc_name(src, file_hash)
+    path_key = _registry_path(src, kb_dir)
+    path_metadata = registry.get_by_path(path_key) or {}
+    doc_name = path_metadata.get("doc_name") or _make_doc_name(src, kb_dir)
     if registry.is_known(file_hash):
         logger.info("Skipping already-known file: %s", src.name)
         metadata = registry.get(file_hash) or {}
         return ConvertResult(
             skipped=True,
             file_hash=file_hash,
-            doc_name=metadata.get("doc_name", doc_name),
+            doc_name=metadata.get("doc_name") or doc_name,
         )
 
     # ------------------------------------------------------------------

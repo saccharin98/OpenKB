@@ -53,6 +53,30 @@ def test_all_entries_empty(tmp_path):
     assert registry.all_entries() == {}
 
 
+def test_get_by_path_matches_raw_or_source_path(tmp_path):
+    registry = HashRegistry(tmp_path / "hashes.json")
+    metadata = {
+        "doc_name": "paper-abc123",
+        "raw_path": "raw/paper.pdf",
+        "source_path": "wiki/sources/paper.md",
+    }
+    registry.add("hash1", metadata)
+
+    assert registry.get_by_path("raw/paper.pdf") == metadata
+    assert registry.get_by_path("wiki/sources/paper.md") == metadata
+
+
+def test_remove_by_doc_name_deletes_stale_hash_entries(tmp_path):
+    registry = HashRegistry(tmp_path / "hashes.json")
+    registry.add("old", {"doc_name": "paper-abc123"})
+    registry.add("other", {"doc_name": "other-def456"})
+
+    registry.remove_by_doc_name("paper-abc123")
+
+    assert registry.is_known("old") is False
+    assert registry.is_known("other") is True
+
+
 def test_hash_file_produces_64_char_hex(tmp_path):
     f = tmp_path / "sample.txt"
     f.write_text("hello world")

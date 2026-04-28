@@ -16,6 +16,13 @@ def _make_file_event(src_path: str, is_directory: bool = False):
     return event
 
 
+def _make_moved_event(src_path: str, dest_path: str, is_directory: bool = False):
+    """Create a mock watchdog move event."""
+    event = _make_file_event(src_path, is_directory=is_directory)
+    event.dest_path = dest_path
+    return event
+
+
 class TestDebouncedHandler:
     def test_collects_created_files(self):
         callback = MagicMock()
@@ -41,6 +48,17 @@ class TestDebouncedHandler:
             handler._timer.cancel()
 
         assert "/raw/paper.txt" in handler._pending
+
+    def test_collects_moved_destination_file(self):
+        callback = MagicMock()
+        handler = DebouncedHandler(callback, debounce_seconds=100)
+
+        handler.on_moved(_make_moved_event("/raw/.notes.md.tmp", "/raw/notes.md"))
+
+        if handler._timer:
+            handler._timer.cancel()
+
+        assert handler._pending == {"/raw/notes.md"}
 
     def test_ignores_directories(self):
         callback = MagicMock()

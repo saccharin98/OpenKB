@@ -228,6 +228,8 @@ class TestUpdateIndex:
         _update_index(wiki, "my-doc", [], doc_brief="New brief")
         text = (wiki / "index.md").read_text()
         assert text.count("[[summaries/my-doc]]") == 1
+        assert "- [[summaries/my-doc]] (short) — New brief" in text
+        assert "Old brief" not in text
 
     def test_backwards_compat_no_briefs(self, tmp_path):
         wiki = tmp_path / "wiki"

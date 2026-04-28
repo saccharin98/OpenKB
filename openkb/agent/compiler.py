@@ -538,10 +538,13 @@ def _update_index(
     lines = index_path.read_text(encoding="utf-8").split("\n")
 
     doc_link = f"[[summaries/{doc_name}]]"
-    if not _section_contains_link(lines, "## Documents", doc_link):
-        doc_entry = f"- {doc_link} ({doc_type})"
+    doc_entry = f"- {doc_link} ({doc_type})"
+    if doc_brief:
+        doc_entry += f" — {doc_brief}"
+    if _section_contains_link(lines, "## Documents", doc_link):
         if doc_brief:
-            doc_entry += f" — {doc_brief}"
+            _replace_section_entry(lines, "## Documents", doc_link, doc_entry)
+    else:
         _insert_section_entry(lines, "## Documents", doc_entry)
 
     for name in concept_names:

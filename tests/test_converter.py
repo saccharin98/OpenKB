@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from openkb.converter import ConvertResult, convert_document, get_pdf_page_count
+from openkb.converter import ConvertResult, _make_doc_name, convert_document, get_pdf_page_count
 
 
 # ---------------------------------------------------------------------------
@@ -42,11 +42,26 @@ class TestConvertDocumentMarkdown:
 
         assert result.skipped is False
         assert result.is_long_doc is False
-        assert result.doc_name == f"notes-{result.file_hash[:10]}"
+        assert result.doc_name == _make_doc_name(src, kb_dir)
         assert result.source_path is not None
         assert result.source_path.name == f"{result.doc_name}.md"
         assert result.source_path.exists()
         assert result.source_path.read_text(encoding="utf-8").startswith("# Notes")
+
+    def test_md_file_keeps_doc_name_when_content_changes(self, kb_dir):
+        """A raw file keeps the same document identity across edits."""
+        src = kb_dir / "raw" / "notes.md"
+        src.write_text("# Notes\n\nOld content.", encoding="utf-8")
+
+        first_result = convert_document(src, kb_dir)
+        src.write_text("# Notes\n\nNew content.", encoding="utf-8")
+        second_result = convert_document(src, kb_dir)
+
+        assert second_result.skipped is False
+        assert second_result.file_hash != first_result.file_hash
+        assert second_result.doc_name == first_result.doc_name
+        assert second_result.source_path == first_result.source_path
+        assert second_result.source_path.read_text(encoding="utf-8").startswith("# Notes\n\nNew content.")
 
     def test_md_duplicate_skipped(self, kb_dir):
         """Second call with same file returns skipped=True when hash is registered."""
